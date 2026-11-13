@@ -21,8 +21,7 @@ public class SecurityConfig {
 
         private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-        public SecurityConfig(
-                        JwtAuthenticationFilter jwtAuthenticationFilter) {
+        public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
                 this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         }
 
@@ -32,29 +31,31 @@ public class SecurityConfig {
 
                 http
                                 .csrf(csrf -> csrf.disable())
-
                                 .cors(Customizer.withDefaults())
-
-                                .sessionManagement(session -> session.sessionCreationPolicy(
-                                                SessionCreationPolicy.STATELESS))
-
+                                .sessionManagement(session -> session
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                                 .formLogin(form -> form.disable())
                                 .httpBasic(basic -> basic.disable())
 
                                 .authorizeHttpRequests(auth -> auth
 
-                                                // Allow Spring error dispatches.
-                                                .dispatcherTypeMatchers(DispatcherType.ERROR)
-                                                .permitAll()
+                                                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 
-                                                // Allow public authentication endpoints.
+                                                // Public authentication endpoints
                                                 .requestMatchers(
                                                                 "/health",
                                                                 "/error",
-                                                                "/auth/otp/**")
+                                                                "/auth/otp/**",
+                                                                "/auth/token/refresh")
                                                 .permitAll()
 
-                                                // Public farmhouse GET endpoints.
+                                                // Admin APIs
+                                                .requestMatchers("/admin/**").hasRole("ADMIN")
+
+                                                // Owner APIs
+                                                .requestMatchers("/owner/**").hasRole("OWNER")
+
+                                                // Public farmhouse browsing
                                                 .requestMatchers(
                                                                 HttpMethod.GET,
                                                                 "/farmhouses",
@@ -68,7 +69,22 @@ public class SecurityConfig {
                                                                 "/amenities")
                                                 .permitAll()
 
-                                                // Protect all remaining endpoints.
+                                                .requestMatchers(
+                                                                HttpMethod.GET,
+                                                                "/amenities")
+                                                .permitAll()
+
+                                                .requestMatchers(
+                                                                HttpMethod.POST,
+                                                                "/amenities")
+                                                .hasRole("ADMIN")
+
+                                                .requestMatchers(
+                                                                HttpMethod.GET,
+                                                                "/uploads/**")
+                                                .permitAll()
+
+                                                // Everything else requires login
                                                 .anyRequest().authenticated())
 
                                 .addFilterBefore(

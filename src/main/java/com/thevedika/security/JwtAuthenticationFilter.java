@@ -40,6 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         return path.equals("/auth/otp/send")
                 || path.equals("/auth/otp/verify")
+                || path.equals("/auth/token/refresh")
                 || path.equals("/health");
     }
 
@@ -73,11 +74,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         .orElse(null);
 
                 if (user != null) {
+
+                    String authority;
+
+                    if ("OWNER".equals(user.getRole()) && !user.isApproved()) {
+                        authority = "ROLE_OWNER_PENDING";
+                    } else {
+                        authority = "ROLE_" + user.getRole();
+                    }
+
                     var authentication = new UsernamePasswordAuthenticationToken(
                             phone,
                             null,
-                            List.of(new SimpleGrantedAuthority(
-                                    "ROLE_" + user.getRole())));
+                            List.of(new SimpleGrantedAuthority(authority)));
 
                     authentication.setDetails(
                             new WebAuthenticationDetailsSource()

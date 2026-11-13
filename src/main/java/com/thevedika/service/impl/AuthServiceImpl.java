@@ -32,333 +32,347 @@ import java.util.List;
 @Service
 public class AuthServiceImpl implements AuthService {
 
-    private final UserRepository userRepository;
-    private final UserSessionRepository sessionRepository;
-    private final JwtService jwtService;
-    private final Fast2SmsService fast2SmsService;
+        private final UserRepository userRepository;
+        private final UserSessionRepository sessionRepository;
+        private final JwtService jwtService;
+        private final Fast2SmsService fast2SmsService;
 
-    private final SecureRandom secureRandom = new SecureRandom();
+        private final SecureRandom secureRandom = new SecureRandom();
 
-    @Value("${jwt.expiration:86400000}")
-    private long accessTokenExpiration;
+        @Value("${jwt.expiration:86400000}")
+        private long accessTokenExpiration;
 
-    @Value("${jwt.refresh-expiration-days:30}")
-    private long refreshTokenExpirationDays;
+        @Value("${jwt.refresh-expiration-days:30}")
+        private long refreshTokenExpirationDays;
 
-    public AuthServiceImpl(
-            UserRepository userRepository,
-            UserSessionRepository sessionRepository,
-            JwtService jwtService,
-            Fast2SmsService fast2SmsService) {
-        this.userRepository = userRepository;
-        this.sessionRepository = sessionRepository;
-        this.jwtService = jwtService;
-        this.fast2SmsService = fast2SmsService;
-    }
-
-    @Override
-    public String sendOtp(SendOtpRequest request) {
-
-        String phone = request.getPhone();
-        String purpose = normalizePurpose(request.getPurpose());
-
-        if ("LOGIN".equals(purpose)
-                && !userRepository.existsByPhone(phone)) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Account not found. Please register first.");
+        public AuthServiceImpl(
+                        UserRepository userRepository,
+                        UserSessionRepository sessionRepository,
+                        JwtService jwtService,
+                        Fast2SmsService fast2SmsService) {
+                this.userRepository = userRepository;
+                this.sessionRepository = sessionRepository;
+                this.jwtService = jwtService;
+                this.fast2SmsService = fast2SmsService;
         }
 
-        if ("REGISTER".equals(purpose)
-                && userRepository.existsByPhone(phone)) {
+        @Override
+        public String sendOtp(SendOtpRequest request) {
 
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "An account already exists for this phone number.");
+                String phone = request.getPhone();
+                String purpose = normalizePurpose(request.getPurpose());
+
+                boolean userExists = userRepository.existsByPhone(phone);
+
+                if ("LOGIN".equals(purpose) && !userExists) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "Account not found. Please register first.");
+                }
+
+                if (("REGISTER".equals(purpose)
+                                || "OWNER_REGISTER".equals(purpose))
+                                && userExists) {
+
+                        throw new ResponseStatusException(
+                                        HttpStatus.CONFLICT,
+                                        "An account already exists for this phone number.");
+                }
+
+                fast2SmsService.sendOtp(phone);
+
+                return "OTP sent successfully";
         }
 
-        fast2SmsService.sendOtp(phone);
+        @Override
+        @Transactional
+        public AuthResponse verifyOtp(
+                        VerifyOtpRequest request,
+                        String deviceInfo,
+                        String ipAddress) {
 
-        return "OTP sent successfully";
-    }
+                String phone = request.getPhone();
+                String purpose = normalizePurpose(request.getPurpose());
 
-    @Override
-    @Transactional
-    public AuthResponse verifyOtp(
-            VerifyOtpRequest request,
-            String deviceInfo,
-            String ipAddress) {
+                fast2SmsService.verifyOtp(phone, request.getOtp());
 
-        String phone = request.getPhone();
-        String purpose = normalizePurpose(request.getPurpose());
+                User user = userRepository.findByPhone(phone).orElse(null);
 
-        fast2SmsService.verifyOtp(phone, request.getOtp());
+                if ("REGISTER".equals(purpose)
+                                || "OWNER_REGISTER".equals(purpose)) {
 
-        User user = userRepository.findByPhone(phone).orElse(null);
+                        if (user != null) {
+                                throw new ResponseStatusException(
+                                                HttpStatus.CONFLICT,
+                                                "An account already exists for this phone number.");
+                        }
 
-        if ("REGISTER".equals(purpose)) {
+                        user = new User();
 
-            if (user != null) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "An account already exists for this phone number.");
-            }
+                        user.setPhone(phone);
 
-            user = new User();
-            user.setPhone(phone);
+                        String fullName = request.getFullName();
 
-            String fullName = request.getFullName();
+                        user.setFullName(
+                                        fullName == null || fullName.isBlank()
+                                                        ? "Guest"
+                                                        : fullName.trim());
 
-            user.setFullName(
-                    fullName == null || fullName.isBlank()
-                            ? "Guest"
-                            : fullName.trim());
+                        user.setEmail(
+                                        request.getEmail() == null
+                                                        || request.getEmail().isBlank()
+                                                                        ? null
+                                                                        : request.getEmail().trim());
 
-            user.setEmail(
-                    request.getEmail() == null
-                            || request.getEmail().isBlank()
-                                    ? null
-                                    : request.getEmail().trim());
+                        if ("OWNER_REGISTER".equals(purpose)) {
 
-            user.setRole("CUSTOMER");
-            user.setActive(true);
+                                user.setRole("OWNER");
+                                user.setApproved(false);
 
-        } else {
+                        } else {
 
-            if (user == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Account not found. Please register first.");
-            }
+                                user.setRole("CUSTOMER");
+                                user.setApproved(true);
+                        }
+
+                        user.setActive(true);
+
+                } else {
+
+                        if (user == null) {
+                                throw new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Account not found. Please register first.");
+                        }
+                }
+
+                if (!user.isActive()) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "This account is disabled.");
+                }
+
+                user = userRepository.save(user);
+
+                return createSession(user, deviceInfo, ipAddress);
         }
 
-        if (!user.isActive()) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "This account is disabled.");
+        private AuthResponse createSession(
+                        User user,
+                        String deviceInfo,
+                        String ipAddress) {
+
+                String accessToken = jwtService.generateToken(user);
+                String refreshToken = generateRefreshToken();
+
+                UserSession session = new UserSession();
+
+                session.setUser(user);
+                session.setRefreshTokenHash(
+                                TokenHashUtil.hash(refreshToken));
+
+                session.setDeviceInfo(deviceInfo);
+                session.setIpAddress(ipAddress);
+                session.setLastUsedAt(LocalDateTime.now());
+
+                session.setExpiresAt(
+                                LocalDateTime.now().plusDays(
+                                                refreshTokenExpirationDays));
+
+                session = sessionRepository.save(session);
+
+                return new AuthResponse(
+                                accessToken,
+                                refreshToken,
+                                accessTokenExpiration / 1000,
+                                session.getId(),
+                                user);
         }
 
-        user = userRepository.save(user);
+        private String generateRefreshToken() {
 
-        return createSession(user, deviceInfo, ipAddress);
-    }
+                byte[] randomBytes = new byte[64];
+                secureRandom.nextBytes(randomBytes);
 
-    private AuthResponse createSession(
-            User user,
-            String deviceInfo,
-            String ipAddress) {
-
-        String accessToken = jwtService.generateToken(user);
-        String refreshToken = generateRefreshToken();
-
-        UserSession session = new UserSession();
-
-        session.setUser(user);
-        session.setRefreshTokenHash(
-                TokenHashUtil.hash(refreshToken));
-
-        session.setDeviceInfo(deviceInfo);
-        session.setIpAddress(ipAddress);
-        session.setLastUsedAt(LocalDateTime.now());
-
-        session.setExpiresAt(
-                LocalDateTime.now().plusDays(
-                        refreshTokenExpirationDays));
-
-        session = sessionRepository.save(session);
-
-        return new AuthResponse(
-                accessToken,
-                refreshToken,
-                accessTokenExpiration / 1000,
-                session.getId(),
-                user);
-    }
-
-    private String generateRefreshToken() {
-
-        byte[] randomBytes = new byte[64];
-        secureRandom.nextBytes(randomBytes);
-
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(randomBytes);
-    }
-
-    @Override
-    @Transactional
-    public AuthResponse refreshToken(String refreshToken) {
-
-        UserSession session = getValidSession(refreshToken);
-
-        User user = session.getUser();
-
-        if (!user.isActive()) {
-            session.setRevoked(true);
-            sessionRepository.save(session);
-
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "This account is disabled.");
+                return Base64.getUrlEncoder()
+                                .withoutPadding()
+                                .encodeToString(randomBytes);
         }
 
-        // Rotate refresh token.
-        String newRefreshToken = generateRefreshToken();
+        @Override
+        @Transactional
+        public AuthResponse refreshToken(String refreshToken) {
 
-        session.setRefreshTokenHash(
-                TokenHashUtil.hash(newRefreshToken));
+                UserSession session = getValidSession(refreshToken);
 
-        session.setLastUsedAt(LocalDateTime.now());
+                User user = session.getUser();
 
-        session.setExpiresAt(
-                LocalDateTime.now().plusDays(
-                        refreshTokenExpirationDays));
+                if (!user.isActive()) {
+                        session.setRevoked(true);
+                        sessionRepository.save(session);
 
-        sessionRepository.save(session);
+                        throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "This account is disabled.");
+                }
 
-        String newAccessToken = jwtService.generateToken(user);
+                // Rotate refresh token.
+                String newRefreshToken = generateRefreshToken();
 
-        return new AuthResponse(
-                newAccessToken,
-                newRefreshToken,
-                accessTokenExpiration / 1000,
-                session.getId(),
-                user);
-    }
+                session.setRefreshTokenHash(
+                                TokenHashUtil.hash(newRefreshToken));
 
-    private UserSession getValidSession(String refreshToken) {
+                session.setLastUsedAt(LocalDateTime.now());
 
-        if (refreshToken == null || refreshToken.isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Refresh token is required.");
+                session.setExpiresAt(
+                                LocalDateTime.now().plusDays(
+                                                refreshTokenExpirationDays));
+
+                sessionRepository.save(session);
+
+                String newAccessToken = jwtService.generateToken(user);
+
+                return new AuthResponse(
+                                newAccessToken,
+                                newRefreshToken,
+                                accessTokenExpiration / 1000,
+                                session.getId(),
+                                user);
         }
 
-        String hash = TokenHashUtil.hash(refreshToken);
+        private UserSession getValidSession(String refreshToken) {
 
-        UserSession session = sessionRepository
-                .findByRefreshTokenHash(hash)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED,
-                        "Invalid refresh token."));
+                if (refreshToken == null || refreshToken.isBlank()) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.UNAUTHORIZED,
+                                        "Refresh token is required.");
+                }
 
-        if (session.isRevoked()) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "This session has been logged out.");
+                String hash = TokenHashUtil.hash(refreshToken);
+
+                UserSession session = sessionRepository
+                                .findByRefreshTokenHash(hash)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.UNAUTHORIZED,
+                                                "Invalid refresh token."));
+
+                if (session.isRevoked()) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.UNAUTHORIZED,
+                                        "This session has been logged out.");
+                }
+
+                if (!session.getExpiresAt().isAfter(LocalDateTime.now())) {
+                        session.setRevoked(true);
+                        sessionRepository.save(session);
+
+                        throw new ResponseStatusException(
+                                        HttpStatus.UNAUTHORIZED,
+                                        "Refresh token expired. Please login again.");
+                }
+
+                return session;
         }
 
-        if (!session.getExpiresAt().isAfter(LocalDateTime.now())) {
-            session.setRevoked(true);
-            sessionRepository.save(session);
+        @Override
+        @Transactional
+        public void logout(String refreshToken) {
 
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Refresh token expired. Please login again.");
+                UserSession session = getValidSession(refreshToken);
+
+                session.setRevoked(true);
+
+                sessionRepository.save(session);
         }
 
-        return session;
-    }
+        @Override
+        @Transactional
+        public void logoutAll(String refreshToken) {
 
-    @Override
-    @Transactional
-    public void logout(String refreshToken) {
+                UserSession currentSession = getValidSession(refreshToken);
 
-        UserSession session = getValidSession(refreshToken);
-
-        session.setRevoked(true);
-
-        sessionRepository.save(session);
-    }
-
-    @Override
-    @Transactional
-    public void logoutAll(String refreshToken) {
-
-        UserSession currentSession = getValidSession(refreshToken);
-
-        sessionRepository.revokeAllByUserId(
-                currentSession.getUser().getId());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<SessionResponse> getSessions(String refreshToken) {
-
-        UserSession currentSession = getValidSession(refreshToken);
-
-        return sessionRepository
-                .findByUserIdAndRevokedFalseAndExpiresAtAfter(
-                        currentSession.getUser().getId(),
-                        LocalDateTime.now())
-                .stream()
-                .map(SessionResponse::new)
-                .toList();
-    }
-
-    @Override
-    @Transactional
-    public void logoutSession(
-            String refreshToken,
-            Long sessionId) {
-
-        UserSession currentSession = getValidSession(refreshToken);
-
-        UserSession targetSession = sessionRepository
-                .findById(sessionId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Session not found."));
-
-        if (!targetSession.getUser().getId().equals(
-                currentSession.getUser().getId())) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "You cannot revoke another user's session.");
+                sessionRepository.revokeAllByUserId(
+                                currentSession.getUser().getId());
         }
 
-        targetSession.setRevoked(true);
-        sessionRepository.save(targetSession);
-    }
+        @Override
+        @Transactional(readOnly = true)
+        public List<SessionResponse> getSessions(String refreshToken) {
 
-    @Override
-    @Transactional(readOnly = true)
-    public long getActiveSessionCount() {
+                UserSession currentSession = getValidSession(refreshToken);
 
-        return sessionRepository.countByRevokedFalseAndExpiresAtAfter(
-                LocalDateTime.now());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public long getActiveUserCount() {
-
-        return sessionRepository
-                .findAll()
-                .stream()
-                .filter(s -> !s.isRevoked())
-                .filter(s -> s.getExpiresAt().isAfter(
-                        LocalDateTime.now()))
-                .map(s -> s.getUser().getId())
-                .distinct()
-                .count();
-    }
-
-    private String normalizePurpose(String purpose) {
-
-        String normalized = purpose == null
-                ? ""
-                : purpose.trim().toUpperCase();
-
-        if (!normalized.equals("LOGIN")
-                && !normalized.equals("REGISTER")) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Purpose must be LOGIN or REGISTER");
+                return sessionRepository
+                                .findByUserIdAndRevokedFalseAndExpiresAtAfter(
+                                                currentSession.getUser().getId(),
+                                                LocalDateTime.now())
+                                .stream()
+                                .map(SessionResponse::new)
+                                .toList();
         }
 
-        return normalized;
-    }
+        @Override
+        @Transactional
+        public void logoutSession(
+                        String refreshToken,
+                        Long sessionId) {
+
+                UserSession currentSession = getValidSession(refreshToken);
+
+                UserSession targetSession = sessionRepository
+                                .findById(sessionId)
+                                .orElseThrow(() -> new ResponseStatusException(
+                                                HttpStatus.NOT_FOUND,
+                                                "Session not found."));
+
+                if (!targetSession.getUser().getId().equals(
+                                currentSession.getUser().getId())) {
+                        throw new ResponseStatusException(
+                                        HttpStatus.FORBIDDEN,
+                                        "You cannot revoke another user's session.");
+                }
+
+                targetSession.setRevoked(true);
+                sessionRepository.save(targetSession);
+        }
+
+        @Override
+        @Transactional(readOnly = true)
+        public long getActiveSessionCount() {
+
+                return sessionRepository.countByRevokedFalseAndExpiresAtAfter(
+                                LocalDateTime.now());
+        }
+
+        @Override
+        @Transactional(readOnly = true)
+        public long getActiveUserCount() {
+
+                return sessionRepository
+                                .findAll()
+                                .stream()
+                                .filter(s -> !s.isRevoked())
+                                .filter(s -> s.getExpiresAt().isAfter(
+                                                LocalDateTime.now()))
+                                .map(s -> s.getUser().getId())
+                                .distinct()
+                                .count();
+        }
+
+        private String normalizePurpose(String purpose) {
+
+                String normalized = purpose == null
+                                ? ""
+                                : purpose.trim().toUpperCase();
+
+                if (!normalized.equals("LOGIN")
+                                && !normalized.equals("REGISTER")
+                                && !normalized.equals("OWNER_REGISTER")) {
+
+                        throw new ResponseStatusException(
+                                        HttpStatus.BAD_REQUEST,
+                                        "Purpose must be LOGIN, REGISTER or OWNER_REGISTER");
+                }
+
+                return normalized;
+        }
 }

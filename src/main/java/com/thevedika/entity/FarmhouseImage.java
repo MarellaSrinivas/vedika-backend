@@ -20,6 +20,9 @@ public class FarmhouseImage {
     @Column(nullable = false)
     private Integer displayOrder = 0;
 
+    @Column(nullable = false)
+    private Boolean coverImage = false;
+
     public FarmhouseImage() {
     }
 
@@ -49,5 +52,13 @@ public class FarmhouseImage {
 
     public void setDisplayOrder(Integer displayOrder) {
         this.displayOrder = displayOrder;
+    }
+
+    public Boolean getCoverImage() {
+        return coverImage;
+    }
+
+    public void setCoverImage(Boolean coverImage) {
+        this.coverImage = coverImage;
     }
 }

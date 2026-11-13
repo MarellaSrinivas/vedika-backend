@@ -1,3 +1,4 @@
+
 package com.thevedika.repository;
 
 import com.thevedika.entity.FarmhouseSpecialPrice;
@@ -8,14 +9,23 @@ import java.util.List;
 import java.util.Optional;
 
 public interface FarmhouseSpecialPriceRepository
-        extends JpaRepository<FarmhouseSpecialPrice, Long> {
+                extends JpaRepository<FarmhouseSpecialPrice, Long> {
 
-    Optional<FarmhouseSpecialPrice> findByFarmhouseIdAndPriceDate(
-            Long farmhouseId,
-            LocalDate priceDate);
+        List<FarmhouseSpecialPrice> findByFarmhouseIdAndPriceDateBetweenOrderByPriceDateAsc(
+                        Long farmhouseId,
+                        LocalDate startDate,
+                        LocalDate endDate);
 
-    List<FarmhouseSpecialPrice> findByFarmhouseIdAndPriceDateBetween(
-            Long farmhouseId,
-            LocalDate startDate,
-            LocalDate endDate);
+        Optional<FarmhouseSpecialPrice> findByFarmhouseIdAndPriceDate(
+                        Long farmhouseId,
+                        LocalDate priceDate);
+
+        Optional<FarmhouseSpecialPrice> findByIdAndFarmhouseId(
+                        Long id,
+                        Long farmhouseId);
+
+        void deleteByFarmhouseIdAndPriceDate(
+                        Long farmhouseId,
+                        LocalDate priceDate);
+
 }

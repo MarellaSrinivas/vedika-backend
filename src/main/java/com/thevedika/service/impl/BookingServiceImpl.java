@@ -231,15 +231,20 @@ public class BookingServiceImpl implements BookingService {
 
         private int getAddonQuantity(String pricingType, int guests) {
 
-                if (pricingType == null) {
+                if (pricingType == null || pricingType.isBlank()) {
                         throw new ResponseStatusException(
                                         HttpStatus.BAD_REQUEST,
                                         "Add-on pricing type is missing");
                 }
 
-                return switch (pricingType.trim().toLowerCase()) {
-                        case "perstay" -> 1;
-                        case "perguest" -> guests;
+                return switch (pricingType.trim().toUpperCase()) {
+                        case "PER_STAY" -> 1;
+                        case "PER_GUEST" -> guests;
+
+                        // Backward compatibility with older database values
+                        case "PERSTAY" -> 1;
+                        case "PERGUEST" -> guests;
+
                         default -> throw new ResponseStatusException(
                                         HttpStatus.BAD_REQUEST,
                                         "Unsupported add-on pricing type: " + pricingType);

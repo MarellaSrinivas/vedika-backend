@@ -1,3 +1,4 @@
+
 package com.thevedika.entity;
 
 import jakarta.persistence.*;
@@ -27,6 +28,11 @@ public class User {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    // Existing customers remain approved.
+    // New owners must be explicitly approved by an admin.
+    @Column(nullable = false)
+    private boolean approved = true;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -82,7 +88,20 @@ public class User {
         this.active = active;
     }
 
+    public boolean isApproved() {
+        return approved;
+    }
+
+    public Boolean getApproved() {
+        return approved;
+    }
+
+    public void setApproved(Boolean approved) {
+        this.approved = approved;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
+
 }
