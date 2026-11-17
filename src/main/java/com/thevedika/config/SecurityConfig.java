@@ -49,6 +49,8 @@ public class SecurityConfig {
                                                                 "/auth/token/refresh")
                                                 .permitAll()
 
+                                                .requestMatchers("/auth/reviewer/login").permitAll()
+
                                                 // Admin APIs
                                                 .requestMatchers("/admin/**").hasRole("ADMIN")
 

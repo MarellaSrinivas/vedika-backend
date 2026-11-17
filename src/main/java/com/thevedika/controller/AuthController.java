@@ -6,7 +6,7 @@ import com.thevedika.dto.auth.SendOtpRequest;
 import com.thevedika.dto.auth.VerifyOtpRequest;
 import com.thevedika.dto.auth.RefreshTokenRequest;
 import com.thevedika.dto.auth.SessionResponse;
-
+import com.thevedika.service.ReviewerAuthService;
 import com.thevedika.service.AuthService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,90 +22,109 @@ import java.util.Map;
 @RequestMapping("/auth")
 public class AuthController {
 
-    private final AuthService authService;
+        private final AuthService authService;
+        private final ReviewerAuthService reviewerAuthService;
 
-    public AuthController(AuthService authService) {
-        this.authService = authService;
-    }
+        public AuthController(AuthService authService, ReviewerAuthService reviewerAuthService) {
+                this.authService = authService;
+                this.reviewerAuthService = reviewerAuthService;
+        }
 
-    @PostMapping("/otp/send")
-    public ResponseEntity<Map<String, String>> sendOtp(
-            @Valid @RequestBody SendOtpRequest request) {
+        @PostMapping("/otp/send")
+        public ResponseEntity<Map<String, String>> sendOtp(
+                        @Valid @RequestBody SendOtpRequest request) {
 
-        String message = authService.sendOtp(request);
+                String message = authService.sendOtp(request);
 
-        return ResponseEntity.ok(Map.of("message", message));
-    }
+                return ResponseEntity.ok(Map.of("message", message));
+        }
 
-    @PostMapping("/otp/verify")
-    public ResponseEntity<AuthResponse> verifyOtp(
-            @Valid @RequestBody VerifyOtpRequest request,
-            HttpServletRequest httpRequest) {
+        @PostMapping("/otp/verify")
+        public ResponseEntity<AuthResponse> verifyOtp(
+                        @Valid @RequestBody VerifyOtpRequest request,
+                        HttpServletRequest httpRequest) {
 
-        String deviceInfo = httpRequest.getHeader("User-Agent");
+                String deviceInfo = httpRequest.getHeader("User-Agent");
 
-        String ipAddress = httpRequest.getRemoteAddr();
+                String ipAddress = httpRequest.getRemoteAddr();
 
-        return ResponseEntity.ok(
-                authService.verifyOtp(
-                        request,
-                        deviceInfo,
-                        ipAddress));
-    }
+                return ResponseEntity.ok(
+                                authService.verifyOtp(
+                                                request,
+                                                deviceInfo,
+                                                ipAddress));
+        }
 
-    // Refresh access token and rotate refresh token.
-    @PostMapping("/token/refresh")
-    public ResponseEntity<AuthResponse> refreshToken(
-            @Valid @RequestBody RefreshTokenRequest request) {
+        @PostMapping("/reviewer/login")
+        public ResponseEntity<AuthResponse> reviewerLogin(
+                        @RequestBody Map<String, String> request,
+                        HttpServletRequest httpRequest) {
 
-        return ResponseEntity.ok(
-                authService.refreshToken(
-                        request.getRefreshToken()));
-    }
+                String deviceInfo = httpRequest.getHeader("User-Agent");
+                String ipAddress = httpRequest.getRemoteAddr();
 
-    // Logout current device.
-    @PostMapping("/logout")
-    public ResponseEntity<Map<String, String>> logout(
-            @Valid @RequestBody RefreshTokenRequest request) {
+                AuthResponse response = reviewerAuthService.login(
+                                request.get("phone"),
+                                request.get("otp"),
+                                deviceInfo,
+                                ipAddress);
 
-        authService.logout(request.getRefreshToken());
+                return ResponseEntity.ok(response);
+        }
 
-        return ResponseEntity.ok(
-                Map.of("message", "Logged out successfully"));
-    }
+        // Refresh access token and rotate refresh token.
+        @PostMapping("/token/refresh")
+        public ResponseEntity<AuthResponse> refreshToken(
+                        @Valid @RequestBody RefreshTokenRequest request) {
 
-    // Logout all devices.
-    @PostMapping("/logout-all")
-    public ResponseEntity<Map<String, String>> logoutAll(
-            @Valid @RequestBody RefreshTokenRequest request) {
+                return ResponseEntity.ok(
+                                authService.refreshToken(
+                                                request.getRefreshToken()));
+        }
 
-        authService.logoutAll(request.getRefreshToken());
+        // Logout current device.
+        @PostMapping("/logout")
+        public ResponseEntity<Map<String, String>> logout(
+                        @Valid @RequestBody RefreshTokenRequest request) {
 
-        return ResponseEntity.ok(
-                Map.of("message", "Logged out from all devices"));
-    }
+                authService.logout(request.getRefreshToken());
 
-    // List active devices belonging to this customer.
-    @PostMapping("/sessions")
-    public ResponseEntity<List<SessionResponse>> getSessions(
-            @Valid @RequestBody RefreshTokenRequest request) {
+                return ResponseEntity.ok(
+                                Map.of("message", "Logged out successfully"));
+        }
 
-        return ResponseEntity.ok(
-                authService.getSessions(
-                        request.getRefreshToken()));
-    }
+        // Logout all devices.
+        @PostMapping("/logout-all")
+        public ResponseEntity<Map<String, String>> logoutAll(
+                        @Valid @RequestBody RefreshTokenRequest request) {
 
-    // Logout a particular device.
-    @DeleteMapping("/sessions/{sessionId}")
-    public ResponseEntity<Map<String, String>> logoutSession(
-            @PathVariable Long sessionId,
-            @Valid @RequestBody RefreshTokenRequest request) {
+                authService.logoutAll(request.getRefreshToken());
 
-        authService.logoutSession(
-                request.getRefreshToken(),
-                sessionId);
+                return ResponseEntity.ok(
+                                Map.of("message", "Logged out from all devices"));
+        }
 
-        return ResponseEntity.ok(
-                Map.of("message", "Device logged out successfully"));
-    }
+        // List active devices belonging to this customer.
+        @PostMapping("/sessions")
+        public ResponseEntity<List<SessionResponse>> getSessions(
+                        @Valid @RequestBody RefreshTokenRequest request) {
+
+                return ResponseEntity.ok(
+                                authService.getSessions(
+                                                request.getRefreshToken()));
+        }
+
+        // Logout a particular device.
+        @DeleteMapping("/sessions/{sessionId}")
+        public ResponseEntity<Map<String, String>> logoutSession(
+                        @PathVariable Long sessionId,
+                        @Valid @RequestBody RefreshTokenRequest request) {
+
+                authService.logoutSession(
+                                request.getRefreshToken(),
+                                sessionId);
+
+                return ResponseEntity.ok(
+                                Map.of("message", "Device logged out successfully"));
+        }
 }
