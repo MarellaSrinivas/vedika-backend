@@ -57,6 +57,9 @@ public class SecurityConfig {
                                                 // Owner APIs
                                                 .requestMatchers("/owner/**").hasRole("OWNER")
 
+                                                // Customer APIs
+                                                .requestMatchers("/customers/**").hasRole("CUSTOMER")
+
                                                 // Public farmhouse browsing
                                                 .requestMatchers(
                                                                 HttpMethod.GET,
