@@ -1,4 +1,3 @@
-
 package com.thevedika.dto.farmhouse;
 
 import java.math.BigDecimal;
@@ -41,9 +40,22 @@ public class FarmhouseResponse {
     private String eventsPolicy;
     private String cookingFoodPolicy;
 
+    // NEW: Assigned farmhouse owner
+    private OwnerResponse owner;
+
     private List<ImageResponse> images;
     private List<AmenityResponse> amenities;
     private List<AddonResponse> addons;
+
+    // NEW: Owner information
+    public record OwnerResponse(
+            Long id,
+            String fullName,
+            String phone,
+            String email,
+            Boolean approved,
+            Boolean active) {
+    }
 
     public record ImageResponse(
             Long id,
@@ -272,6 +284,15 @@ public class FarmhouseResponse {
 
     public void setCookingFoodPolicy(String cookingFoodPolicy) {
         this.cookingFoodPolicy = cookingFoodPolicy;
+    }
+
+    // NEW: Owner getters/setters
+    public OwnerResponse getOwner() {
+        return owner;
+    }
+
+    public void setOwner(OwnerResponse owner) {
+        this.owner = owner;
     }
 
     public List<ImageResponse> getImages() {
