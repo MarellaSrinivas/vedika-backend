@@ -71,7 +71,8 @@ public class SecurityConfig {
                                                                 "/farmhouses/*/images",
                                                                 "/farmhouses/*/amenities",
                                                                 "/farmhouses/*/addons",
-                                                                "/amenities")
+                                                                "/amenities",
+                                                                "/sitemap.xml")
                                                 .permitAll()
 
                                                 .requestMatchers(
